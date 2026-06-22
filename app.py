@@ -3,6 +3,8 @@ import streamlit as st
 from PIL import Image
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+from dotenv import load_dotenv
+load_dotenv()
 
 st.set_page_config(page_title="FrameFM", page_icon="📻", layout="centered")
 
@@ -54,22 +56,22 @@ MOOD_LABELS = [
     "uplifting", "chill",
 ]
 
-MOOD_TO_SPOTIFY_ATTRS = {
-    "happy":       dict(valence=(0.7, 1.0),  energy=(0.5, 1.0)),
-    "sad":         dict(valence=(0.0, 0.35), energy=(0.0, 0.5)),
-    "energetic":   dict(energy=(0.7, 1.0),   tempo=(120, 200)),
-    "calm":        dict(energy=(0.0, 0.4),   valence=(0.3, 0.7)),
-    "romantic":    dict(valence=(0.5, 0.9),  energy=(0.2, 0.6)),
-    "dark":        dict(valence=(0.0, 0.4),  energy=(0.4, 0.8)),
-    "dreamy":      dict(valence=(0.4, 0.8),  energy=(0.1, 0.45)),
-    "nostalgic":   dict(valence=(0.3, 0.7),  energy=(0.2, 0.6)),
-    "angry":       dict(valence=(0.0, 0.4),  energy=(0.7, 1.0)),
-    "peaceful":    dict(energy=(0.0, 0.35),  valence=(0.4, 0.8)),
-    "mysterious":  dict(valence=(0.2, 0.6),  energy=(0.2, 0.6)),
-    "epic":        dict(energy=(0.7, 1.0),   valence=(0.4, 0.9)),
-    "melancholic": dict(valence=(0.1, 0.4),  energy=(0.1, 0.5)),
-    "uplifting":   dict(valence=(0.6, 1.0),  energy=(0.5, 0.9)),
-    "chill":       dict(energy=(0.1, 0.5),   valence=(0.4, 0.8)),
+MOOD_TO_GENRE = {
+    "happy":       "pop",
+    "sad":         "sad",
+    "energetic":   "dance",
+    "calm":        "ambient",
+    "romantic":    "romance",
+    "dark":        "dark",
+    "dreamy":      "dream pop",
+    "nostalgic":   "indie",
+    "angry":       "metal",
+    "peaceful":    "acoustic",
+    "mysterious":  "alternative",
+    "epic":        "epic",
+    "melancholic": "melancholic",
+    "uplifting":   "uplifting",
+    "chill":       "chill",
 }
 
 
@@ -87,37 +89,19 @@ def spotify_client(cid: str, secret: str) -> spotipy.Spotify:
 
 
 def get_songs(sp: spotipy.Spotify, moods: list[str], caption: str, n: int):
-    query_terms = caption.split()[:5]
-    query_terms.append(moods[0])
-    query = " ".join(query_terms)
+    genre = MOOD_TO_GENRE.get(moods[0], moods[0])
+    query_terms = caption.split()[:4]
+    query = " ".join(query_terms) + f" {genre}"
 
-    attrs = MOOD_TO_SPOTIFY_ATTRS.get(moods[0], {})
-    target_valence = sum(attrs.get("valence", (0.5, 0.5))) / 2 if "valence" in attrs else None
-    target_energy  = sum(attrs.get("energy",  (0.5, 0.5))) / 2 if "energy"  in attrs else None
-
-    results = sp.search(q=query, type="track", limit=50)
+    results = sp.search(q=query, type="track", limit=n)
     tracks = results["tracks"]["items"]
 
     if not tracks:
-        return []
+        # fallback: search by mood/genre only
+        results = sp.search(q=genre, type="track", limit=n)
+        tracks = results["tracks"]["items"]
 
-    ids = [t["id"] for t in tracks if t.get("id")]
-    features = sp.audio_features(ids[:50])
-    feat_map = {f["id"]: f for f in features if f}
-
-    def score(track):
-        f = feat_map.get(track["id"])
-        if not f:
-            return 0
-        s = 0
-        if target_valence is not None:
-            s += 1 - abs(f.get("valence", 0.5) - target_valence)
-        if target_energy is not None:
-            s += 1 - abs(f.get("energy", 0.5) - target_energy)
-        return s
-
-    ranked = sorted(tracks, key=score, reverse=True)
-    return ranked[:n]
+    return sorted(tracks, key=lambda t: t.get("popularity", 0), reverse=True)[:n]
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
